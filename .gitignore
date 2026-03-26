@@ -49,3 +49,5 @@ ios/Runner/GoogleService-Info.plist
 ios/Pods/
 ios/Podfile.lock
 .flutter-plugins
+android/app/google-services.json
+lib/firebase_options.dart

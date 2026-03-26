@@ -14,14 +14,12 @@ import FirebaseMessaging
     GMSServices.provideAPIKey("AIzaSyCqXTHD5Xq7GdtroNKYFXtk849azYJt4uY")
     GeneratedPluginRegistrant.register(with: self)
 
-    // Request notification permissions
     UNUserNotificationCenter.current().delegate = self
     application.registerForRemoteNotifications()
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  // Forward APNs token to Firebase
   override func application(
     _ application: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
