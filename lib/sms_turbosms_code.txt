@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 / ==================== ВВЕДЕННЯ НОМЕРА (прямий виклик TurboSMS) ====================
 class PhoneLoginScreen extends StatefulWidget {
   const PhoneLoginScreen({super.key});
@@ -102,4 +103,110 @@ Future<void> _sendOTP() async {
       ),
     );
   }
+=======
+/ ==================== ВВЕДЕННЯ НОМЕРА (прямий виклик TurboSMS) ====================
+class PhoneLoginScreen extends StatefulWidget {
+  const PhoneLoginScreen({super.key});
+  @override
+  State<PhoneLoginScreen> createState() => _PhoneLoginScreenState();
+}
+
+class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
+  final _phoneController = TextEditingController(text: '+380');
+  bool _loading = false;
+
+Future<void> _sendOTP() async {
+  final phone = _phoneController.text.trim();
+  if (!phone.startsWith('+380')) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Введіть український номер (+380...)')),
+    );
+    return;
+  }
+
+  setState(() => _loading = true);
+
+  final code = (100000 + DateTime.now().millisecondsSinceEpoch % 900000).toString();
+
+  try {
+    final response = await http.post(
+      Uri.parse('https://api.turbosms.ua/message/send.json'),   // ← правильний URL
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer 5e0f7dc33cf61e5f261a73f8a4e4ffe1915fe9cf',
+      },
+      body: jsonEncode({
+        "recipients": [phone],                    // ← обов'язково масив
+        "sms": {
+          "sender": "Dostavka24",
+          "text": "Ваш код підтвердження: $code"
+        }
+      }),
+    );
+
+    print('=== TurboSMS відповідь ===');
+    print('Статус: ${response.statusCode}');
+    print('Тіло: ${response.body}');
+
+    if (response.statusCode == 200) {
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => OTPVerificationScreen(phone: phone, generatedCode: code),
+          ),
+        );
+      }
+    } else {
+      throw Exception('TurboSMS: ${response.body}');
+    }
+  } catch (e) {
+    print('Помилка: $e');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Не вдалося надіслати SMS: $e')),
+    );
+  }
+
+  setState(() => _loading = false);
+}
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Вхід')),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.phone_android, size: 80, color: Color(0xFF005BBB)),
+            const SizedBox(height: 30),
+            const Text('Введіть номер телефону', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 40),
+            TextField(
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Номер телефону',
+                hintText: '+380 XX XXX XX XX',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 30),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: _loading ? null : _sendOTP,
+                child: _loading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('Отримати код SMS', style: TextStyle(fontSize: 18)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+>>>>>>> 467667475cbaf79afed5ea350d290cd705acbd73
 }

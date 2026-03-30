@@ -46,17 +46,28 @@ serve(async (req) => {
         body: 'Оплату отримано. Ваші страви вже почали готувати.'
       });
 
+<<<<<<< HEAD
       // 🔥 НОВЕ: КЛИЧЕМО КУР'ЄРА!
       const prepTime = record.prep_time_minutes ? record.prep_time_minutes : 'декілька';
       if (!record.courier_id) {
         // Якщо кур'єра ще немає - кидаємо в загальний пул
         messagesToSend.push({
           topic: `couriers`, // Усі кур'єри мають бути підписані на цей топік
+=======
+      // Кличемо кур'єра
+      const prepTime = record.prep_time_minutes ? record.prep_time_minutes : 'декілька';
+      if (!record.courier_id) {
+        messagesToSend.push({
+          topic: `couriers`,
+>>>>>>> 467667475cbaf79afed5ea350d290cd705acbd73
           title: '🛵 З\'явилося нове замовлення!',
           body: `Ресторан почав готувати. Буде готово через ${prepTime} хв. Хто забере?`
         });
       } else {
+<<<<<<< HEAD
         // Якщо кур'єр вже закріплений
+=======
+>>>>>>> 467667475cbaf79afed5ea350d290cd705acbd73
         messagesToSend.push({
           topic: `courier_${record.courier_id}`,
           title: '🛵 Кухня почала готувати!',
@@ -71,7 +82,10 @@ serve(async (req) => {
         title: '🛍️ Замовлення зібрано!',
         body: 'Ваше замовлення чекає в ресторані.'
       });
+<<<<<<< HEAD
       // Нагадуємо кур'єру, що вже час забирати
+=======
+>>>>>>> 467667475cbaf79afed5ea350d290cd705acbd73
       if (record.courier_id) {
         messagesToSend.push({
           topic: `courier_${record.courier_id}`,
@@ -96,6 +110,7 @@ serve(async (req) => {
         body: 'Замовлення успішно доставлено. Дякуємо, що ви з нами!'
       });
     }
+<<<<<<< HEAD
     // 7. СКАСУВАННЯ
     else if (status === 'Відхилено' || status === 'Скасовано') {
       messagesToSend.push({
@@ -107,13 +122,47 @@ serve(async (req) => {
         topic: `restaurant_${record.restaurant_id}`,
         title: '❌ Клієнт відмовився!',
         body: `Клієнт скасував або не оплатив замовлення #${shortId}.`
+=======
+    // 7. ВІДХИЛЕНО РЕСТОРАНОМ
+    else if (status === 'Відхилено') {
+      messagesToSend.push({
+        topic: `client_${record.user_id}`,
+        title: '❌ Ресторан відхилив замовлення',
+        body: record.cancellation_reason ? `Причина: ${record.cancellation_reason}` : 'На жаль, заклад не може виконати замовлення.'
+>>>>>>> 467667475cbaf79afed5ea350d290cd705acbd73
       });
       // Повідомляємо кур'єра, щоб не їхав дарма
       if (record.courier_id) {
          messagesToSend.push({
           topic: `courier_${record.courier_id}`,
           title: '❌ Відбій!',
+<<<<<<< HEAD
           body: `Замовлення #${shortId} було скасовано.`
+=======
+          body: `Замовлення #${shortId} було скасовано рестораном.`
+        });
+      }
+      // 🛑 Ресторану пуш НЕ шлемо, бо він сам натиснув кнопку "Відхилити"
+    }
+    // 8. СКАСОВАНО КЛІЄНТОМ
+    else if (status === 'Скасовано') {
+      messagesToSend.push({
+        topic: `client_${record.user_id}`,
+        title: '❌ Замовлення скасовано',
+        body: 'Ваше замовлення успішно скасовано.'
+      });
+      messagesToSend.push({
+        topic: `restaurant_${record.restaurant_id}`,
+        title: '❌ Клієнт скасував замовлення!',
+        body: record.cancellation_reason ? `Причина: ${record.cancellation_reason}` : `Клієнт відмовився від замовлення #${shortId}.`
+      });
+      // Повідомляємо кур'єра
+      if (record.courier_id) {
+         messagesToSend.push({
+          topic: `courier_${record.courier_id}`,
+          title: '❌ Відбій!',
+          body: `Клієнт скасував замовлення #${shortId}.`
+>>>>>>> 467667475cbaf79afed5ea350d290cd705acbd73
         });
       }
     }
