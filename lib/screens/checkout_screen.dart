@@ -89,10 +89,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final restAddress = restRes['address'];
 
       if (restAddress != null && restAddress.toString().isNotEmpty) {
-        final coords = await _geocodeWithGoogle('$restAddress, Україна');
-        if (coords != null) {
-          _restaurantLocation = Location(latitude: coords[0], longitude: coords[1], timestamp: DateTime.now());
-        }
+        List<Location> locs = await locationFromAddress('$restAddress, Україна');
+        if (locs.isNotEmpty) _restaurantLocation = locs.first;
       }
     } catch (e) {
       debugPrint('Помилка завантаження даних: $e');
@@ -137,23 +135,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  Future<List<double>?> _geocodeWithGoogle(String address) async {
-    try {
-      final url = 'https://maps.googleapis.com/maps/api/geocode/json?address=${Uri.encodeComponent(address)}&key=${AppSecrets.googleMapsKey}';
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['status'] == 'OK') {
-          final loc = data['results'][0]['geometry']['location'];
-          return [loc['lat'], loc['lng']];
-        }
-      }
-    } catch (e) {
-      debugPrint('Geocoding error: $e');
-    }
-    return null;
-  }
-
   Future<void> _calculateDeliveryPrice(String clientAddress) async {
     if (clientAddress.trim().isEmpty) {
       setState(() {
@@ -164,13 +145,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     try {
-      final clientCoords = await _geocodeWithGoogle('$clientAddress, Україна');
+      List<Location> clientLocs = await locationFromAddress('$clientAddress, Україна');
 
-      if (clientCoords != null && _restaurantLocation != null) {
+      if (clientLocs.isNotEmpty && _restaurantLocation != null) {
         final double restLat = _restaurantLocation!.latitude;
         final double restLng = _restaurantLocation!.longitude;
-        final double clientLat = clientCoords[0];
-        final double clientLng = clientCoords[1];
+        final double clientLat = clientLocs.first.latitude;
+        final double clientLng = clientLocs.first.longitude;
 
         final String googleApiKey = AppSecrets.googleMapsKey;
         final String url = 'https://maps.googleapis.com/maps/api/directions/json?origin=$restLat,$restLng&destination=$clientLat,$clientLng&key=$googleApiKey';
@@ -267,7 +248,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')} о ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
-  // 🔥 НОВА, СПРОЩЕНА ЛОГІКА СТВОРЕННЯ ЗАМОВЛЕННЯ
   Future<void> _placeOrder(CartProvider cart) async {
     String? finalAddress;
     String? finalCityToSave;
@@ -345,7 +325,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'restaurant_id': widget.restaurantId,
         'total_amount': totalWithDelivery,
         'delivery_price': _deliveryPrice,
-        // 🔥 СТАТУС ТЕПЕР ОЧІКУЄ ПІДТВЕРДЖЕННЯ РЕСТОРАНОМ (Гроші ще не списуються)
         'status': 'Очікує підтвердження',
         'delivery_address': finalAddress,
         'delivery_comment': _commentController.text.trim(),
@@ -374,7 +353,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       await SupabaseService.client.from('order_items').insert(itemsData);
 
-      // 🔥 ВСЕ! НІЯКОГО МОНОБАНКУ ТУТ. ОДРАЗУ ПЕРЕКІД В ІСТОРІЮ.
       if (mounted) {
         Provider.of<CartProvider>(context, listen: false).clear();
         Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
@@ -400,7 +378,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final borderColor = isDark ? Colors.white.withOpacity(0.1) : Colors.grey[300]!;
 
     final cart = Provider.of<CartProvider>(context);
-    final totalWithDelivery = cart.total + _deliveryPrice;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -460,7 +437,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 onPressed: _isLoading ? null : () => _placeOrder(cart),
                 child: _isLoading
                     ? const CircularProgressIndicator(color: Colors.black)
-                // 🔥 Кнопка тепер просто "Замовити"
                     : const Text('Замовити', style: TextStyle(fontSize: 18, color: Colors.black, fontWeight: FontWeight.w900)),
               ),
             ),
@@ -478,7 +454,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               : ListView(
             padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + kToolbarHeight + 10, left: 16, right: 16, bottom: 20),
             children: [
-              // БЛОК АДРЕСИ
+              // ==========================================
+              // 1. БЛОК АДРЕСИ
+              // ==========================================
               Container(
                 padding: const EdgeInsets.all(16),
                 margin: const EdgeInsets.only(bottom: 16),
@@ -522,7 +500,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               ],
                             ),
                           ),
-                          Icon(_showAddressDetails ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: textColor),
+                          Icon(_showAddressDetails ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: textColor),
                         ],
                       ),
                     ),
@@ -547,12 +525,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.location_on, color: _useSavedAddress ? const Color(0xFF005BBB) : hintColor, size: 20),
+                                Icon(Icons.location_on_rounded, color: _useSavedAddress ? const Color(0xFF005BBB) : hintColor, size: 20),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text('Моя адреса', style: TextStyle(fontWeight: _useSavedAddress ? FontWeight.bold : FontWeight.normal, color: textColor)),
                                 ),
-                                if (_useSavedAddress) const Icon(Icons.check_circle, color: Color(0xFF005BBB), size: 20),
+                                if (_useSavedAddress) const Icon(Icons.check_circle_rounded, color: Color(0xFF005BBB), size: 20),
                               ],
                             ),
                           ),
@@ -577,7 +555,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.add_location_alt, color: !_useSavedAddress ? const Color(0xFF005BBB) : hintColor, size: 20),
+                                Icon(Icons.add_location_alt_rounded, color: !_useSavedAddress ? const Color(0xFF005BBB) : hintColor, size: 20),
                                 const SizedBox(width: 12),
                                 Text('Інша адреса', style: TextStyle(color: textColor, fontWeight: !_useSavedAddress ? FontWeight.bold : FontWeight.normal)),
                               ],
@@ -599,7 +577,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             fillColor: inputBgColor,
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
                             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                            prefixIcon: const Icon(Icons.location_city, color: Color(0xFF005BBB)),
+                            prefixIcon: const Icon(Icons.location_city_rounded, color: Color(0xFF005BBB)),
                           ),
                           items: _settlements.map((city) {
                             return DropdownMenuItem(value: city, child: Text(city, style: const TextStyle(fontWeight: FontWeight.w500)));
@@ -623,19 +601,28 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             fillColor: inputBgColor,
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
                             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                            prefixIcon: const Icon(Icons.home, color: Color(0xFF005BBB)),
+                            prefixIcon: const Icon(Icons.home_rounded, color: Color(0xFF005BBB)),
                           ),
                         ),
                         const SizedBox(height: 12),
+                        // 🔥 ВИПРАВЛЕНО: Тепер ця кнопка ТІЛЬКИ ховає меню адреси, нічого не відправляючи!
                         SizedBox(
                           width: double.infinity,
-                          child: ElevatedButton(
+                          child: ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF005BBB),
+                              foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            onPressed: () => setState(() => _showAddressDetails = false),
-                            child: const Text('Зберегти і закрити', style: TextStyle(color: Colors.white)),
+                            icon: const Icon(Icons.check_rounded, size: 20),
+                            onPressed: () {
+                              if (_selectedCity == null || _addressController.text.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Введіть повну адресу!')));
+                                return;
+                              }
+                              setState(() => _showAddressDetails = false);
+                            },
+                            label: const Text('Зберегти адресу', style: TextStyle(fontWeight: FontWeight.bold)),
                           ),
                         ),
                       ],
@@ -644,7 +631,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
 
-              // БЛОК ЧАСУ
+              // ==========================================
+              // 2. БЛОК ЧАСУ
+              // ==========================================
               Container(
                 padding: const EdgeInsets.all(16),
                 margin: const EdgeInsets.only(bottom: 16),
@@ -682,7 +671,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
                             ),
                             onPressed: _pickDateTime,
-                            child: Text(!_isAsap && _selectedDateTime != null ? _formatDateTime(_selectedDateTime!) : 'Обрати час ⏰', style: TextStyle(fontSize: 14, color: !_isAsap ? Colors.purple : textColor, fontWeight: !_isAsap ? FontWeight.bold : FontWeight.normal), textAlign: TextAlign.center),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (!_isAsap && _selectedDateTime != null) ...[
+                                  Expanded(child: Text(_formatDateTime(_selectedDateTime!), style: TextStyle(fontSize: 14, color: Colors.purple, fontWeight: FontWeight.bold), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                                ] else ...[
+                                  Icon(Icons.schedule_rounded, size: 18, color: textColor),
+                                  const SizedBox(width: 4),
+                                  Text('Обрати час', style: TextStyle(fontSize: 14, color: textColor)),
+                                ]
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -691,7 +691,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
 
-              // БЛОК ДЕТАЛЕЙ ТА КОМЕНТАРІВ
+              // ==========================================
+              // 3. БЛОК ДЕТАЛЕЙ ТА КОМЕНТАРІВ
+              // ==========================================
               Container(
                 padding: const EdgeInsets.all(16),
                 margin: const EdgeInsets.only(bottom: 16),
@@ -708,7 +710,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.restaurant, color: Color(0xFF005BBB), size: 20),
+                            const Icon(Icons.restaurant_rounded, color: Color(0xFF005BBB), size: 20),
                             const SizedBox(width: 8),
                             Text('Скільки персон?', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: textColor)),
                           ],
@@ -716,14 +718,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         Row(
                           children: [
                             IconButton(
-                              icon: Icon(Icons.remove_circle_outline, color: textColor),
+                              icon: Icon(Icons.remove_circle_outline_rounded, color: textColor),
                               onPressed: () {
                                 if (_personsCount > 1) setState(() => _personsCount--);
                               },
                             ),
                             SizedBox(width: 24, child: Text('$_personsCount', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor))),
                             IconButton(
-                              icon: const Icon(Icons.add_circle_outline, color: Color(0xFF005BBB)),
+                              icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF005BBB)),
                               onPressed: () {
                                 if (_personsCount < 20) setState(() => _personsCount++);
                               },
@@ -741,7 +743,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Row(
                           children: [
-                            Icon(_showRestaurantComment ? Icons.remove : Icons.add, color: Colors.orange, size: 20),
+                            Icon(_showRestaurantComment ? Icons.remove_rounded : Icons.add_rounded, color: Colors.orange, size: 20),
                             const SizedBox(width: 8),
                             Text('Додати коментар для закладу', style: TextStyle(color: textColor, fontWeight: FontWeight.w500)),
                           ],
@@ -771,7 +773,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Row(
                           children: [
-                            Icon(_showCourierComment ? Icons.remove : Icons.add, color: const Color(0xFF005BBB), size: 20),
+                            Icon(_showCourierComment ? Icons.remove_rounded : Icons.add_rounded, color: const Color(0xFF005BBB), size: 20),
                             const SizedBox(width: 8),
                             Text('Додати коментар для кур\'єра', style: TextStyle(color: textColor, fontWeight: FontWeight.w500)),
                           ],
@@ -796,7 +798,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
 
-              // БЛОК "ДЛЯ ІНШОГО"
+              // ==========================================
+              // 4. БЛОК "ДЛЯ ІНШОГО"
+              // ==========================================
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -823,14 +827,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       TextField(
                           controller: _nameController,
                           style: TextStyle(color: textColor),
-                          decoration: InputDecoration(labelText: 'Ім\'я одержувача', labelStyle: TextStyle(color: hintColor), filled: true, fillColor: inputBgColor, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), prefixIcon: const Icon(Icons.person))
+                          decoration: InputDecoration(labelText: 'Ім\'я одержувача', labelStyle: TextStyle(color: hintColor), filled: true, fillColor: inputBgColor, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), prefixIcon: const Icon(Icons.person_rounded))
                       ),
                       const SizedBox(height: 12),
                       TextField(
                           controller: _phoneController,
                           keyboardType: TextInputType.phone,
                           style: TextStyle(color: textColor),
-                          decoration: InputDecoration(labelText: 'Телефон одержувача', labelStyle: TextStyle(color: hintColor), filled: true, fillColor: inputBgColor, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), prefixIcon: const Icon(Icons.phone))
+                          decoration: InputDecoration(labelText: 'Телефон одержувача', labelStyle: TextStyle(color: hintColor), filled: true, fillColor: inputBgColor, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), prefixIcon: const Icon(Icons.phone_rounded))
                       ),
                       const SizedBox(height: 16),
                       Container(

@@ -44,3 +44,13 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 lib/core/secrets.dart
+
+# Secrets & API keys
+.env
+.env.*
+lib/firebase_options.dart
+lib/core/supabase_service.dart
+lib/supabase.dart
+android/app/google-services.json
+android/secrets.properties
+ios/Runner/GoogleService-Info.plist

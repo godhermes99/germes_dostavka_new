@@ -37,6 +37,8 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
   bool _isShiftActive = false;
   final Map<String, String> _previousOrderStatuses = {};
 
+  // 🔥 ГОЛОВНИЙ МАСИВ УСІХ ЗАМОВЛЕНЬ
+  List<Map<String, dynamic>> _allOrders = [];
   StreamSubscription? _orderListenerSub;
 
   @override
@@ -105,9 +107,13 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
         .from('orders')
         .stream(primaryKey: ['id'])
         .eq('restaurant_id', widget.restaurantId)
+        .order('created_at', ascending: false) // 🔥 Додали сортування сюди
         .listen((List<Map<String, dynamic>> allData) {
 
-      // 🔥 1. СИРЕНА ДЛЯ НОВИХ НЕОПЛАЧЕНИХ ЗАМОВЛЕНЬ
+      if (mounted) {
+        setState(() => _allOrders = allData); // 🔥 Оновлюємо стан для всіх вкладок
+      }
+
       final newOrders = allData.where((order) => order['status'] == 'Очікує підтвердження').toList();
 
       if (newOrders.isNotEmpty) {
@@ -122,15 +128,12 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
         }
       }
 
-      // 🔥 2. ВІДСТЕЖЕННЯ ОПЛАТИ ВІД КЛІЄНТА
       for (var order in allData) {
         final id = order['id'].toString();
         final currentStatus = order['status'];
         final previousStatus = _previousOrderStatuses[id];
 
         if (previousStatus != null && previousStatus != currentStatus) {
-
-          // А) Клієнт успішно ОПЛАТИВ замовлення (Вебхук змінив статус на Готується)
           if (previousStatus == 'Очікує оплати' && currentStatus == 'Готується') {
             _playNotificationSound();
             if (mounted) {
@@ -145,7 +148,6 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
                   ));
             }
           }
-          // Б) Клієнт ВІДМОВИВСЯ від оплати (Скасував)
           else if (currentStatus == 'Скасовано' && previousStatus == 'Очікує оплати') {
             _playNotificationSound();
             if (mounted) {
@@ -153,17 +155,11 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
                   context: context,
                   builder: (_) => AlertDialog(
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    // 🔥 ВИПРАВЛЕНО: Синтаксис та захист від переповнення (Flexible)
                     title: const Row(
                       children: [
                         Icon(Icons.cancel, color: Colors.red),
                         SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            'Скасовано клієнтом',
-                            maxLines: 2,
-                          ),
-                        ),
+                        Flexible(child: Text('Скасовано клієнтом', maxLines: 2)),
                       ],
                     ),
                     content: Text('Клієнт відмовився від замовлення №${id.substring(0, 5)}.\n\n${order['cancellation_reason'] ?? 'Готувати не потрібно.'}', style: const TextStyle(fontSize: 16)),
@@ -192,16 +188,12 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
     _repeatTimer = null;
     _bellController.stop();
     _bellController.reset();
+    _audioPlayer.stop(); // 🔥 Сирена змовкає миттєво
   }
 
   Future<void> _fetchRestaurantStatus() async {
     try {
-      final res = await SupabaseService.client
-          .from('restaurants')
-          .select('is_open, is_peak_hours, open_time, close_time')
-          .eq('id', widget.restaurantId)
-          .single();
-
+      final res = await SupabaseService.client.from('restaurants').select('is_open, is_peak_hours, open_time, close_time').eq('id', widget.restaurantId).single();
       if (mounted) {
         setState(() {
           _isRestaurantOpen = res['is_open'] ?? true;
@@ -261,7 +253,6 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Фото закладу успішно оновлено! 🎉'), backgroundColor: Colors.green));
 
     } catch (e) {
-      debugPrint('Помилка завантаження фото: $e');
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Помилка завантаження: $e'), backgroundColor: Colors.red));
     }
   }
@@ -314,31 +305,13 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
                         builder: (context, themeProvider, child) {
                           return SegmentedButton<ThemeMode>(
                             segments: const [
-                              ButtonSegment(
-                                value: ThemeMode.system,
-                                icon: Icon(Icons.settings_suggest),
-                                label: Text('Авто', style: TextStyle(fontSize: 12)),
-                              ),
-                              ButtonSegment(
-                                value: ThemeMode.light,
-                                icon: Icon(Icons.light_mode),
-                                label: Text('Світла', style: TextStyle(fontSize: 12)),
-                              ),
-                              ButtonSegment(
-                                value: ThemeMode.dark,
-                                icon: Icon(Icons.dark_mode),
-                                label: Text('Темна', style: TextStyle(fontSize: 12)),
-                              ),
+                              ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.settings_suggest), label: Text('Авто', style: TextStyle(fontSize: 12))),
+                              ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode), label: Text('Світла', style: TextStyle(fontSize: 12))),
+                              ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode), label: Text('Темна', style: TextStyle(fontSize: 12))),
                             ],
                             selected: {themeProvider.themeMode},
-                            onSelectionChanged: (Set<ThemeMode> newSelection) {
-                              themeProvider.setThemeMode(newSelection.first);
-                            },
-                            style: ButtonStyle(
-                              shape: WidgetStateProperty.all(
-                                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                            ),
+                            onSelectionChanged: (Set<ThemeMode> newSelection) => themeProvider.setThemeMode(newSelection.first),
+                            style: ButtonStyle(shape: WidgetStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))),
                           );
                         },
                       ),
@@ -354,14 +327,8 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
                           OutlinedButton(
                             onPressed: () async {
                               final initialTime = TimeOfDay(hour: int.parse(tempOpen.split(':')[0]), minute: int.parse(tempOpen.split(':')[1]));
-                              final picked = await showTimePicker(
-                                context: context,
-                                initialTime: initialTime,
-                                builder: (ctx, child) => MediaQuery(data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true), child: child!),
-                              );
-                              if (picked != null) {
-                                setDialogState(() => tempOpen = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}');
-                              }
+                              final picked = await showTimePicker(context: context, initialTime: initialTime, builder: (ctx, child) => MediaQuery(data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true), child: child!));
+                              if (picked != null) setDialogState(() => tempOpen = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}');
                             },
                             child: Text(tempOpen, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black)),
                           ),
@@ -376,14 +343,8 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
                           OutlinedButton(
                             onPressed: () async {
                               final initialTime = TimeOfDay(hour: int.parse(tempClose.split(':')[0]), minute: int.parse(tempClose.split(':')[1]));
-                              final picked = await showTimePicker(
-                                context: context,
-                                initialTime: initialTime,
-                                builder: (ctx, child) => MediaQuery(data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true), child: child!),
-                              );
-                              if (picked != null) {
-                                setDialogState(() => tempClose = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}');
-                              }
+                              final picked = await showTimePicker(context: context, initialTime: initialTime, builder: (ctx, child) => MediaQuery(data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true), child: child!));
+                              if (picked != null) setDialogState(() => tempClose = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}');
                             },
                             child: Text(tempClose, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black)),
                           ),
@@ -393,24 +354,13 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
                   ),
                 ),
                 actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Скасувати', style: TextStyle(color: Colors.grey))
-                  ),
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати', style: TextStyle(color: Colors.grey))),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF005BBB), foregroundColor: Colors.white),
                     onPressed: () async {
                       try {
-                        await SupabaseService.client.from('restaurants').update({
-                          'open_time': tempOpen,
-                          'close_time': tempClose,
-                        }).eq('id', widget.restaurantId);
-
-                        setState(() {
-                          _openTime = tempOpen;
-                          _closeTime = tempClose;
-                        });
-
+                        await SupabaseService.client.from('restaurants').update({'open_time': tempOpen, 'close_time': tempClose}).eq('id', widget.restaurantId);
+                        setState(() { _openTime = tempOpen; _closeTime = tempClose; });
                         if (context.mounted) {
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Графік успішно оновлено! ⏰'), backgroundColor: Colors.green));
@@ -469,26 +419,14 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
                   _showSettingsDialog();
                 } else if (value == 'logout') {
                   if (_isShiftActive) await _toggleShift(false);
-
-                  try {
-                    await FirebaseMessaging.instance.deleteToken();
-                  } catch (e) {
-                    debugPrint('Помилка видалення токена: $e');
-                  }
-
+                  try { await FirebaseMessaging.instance.deleteToken(); } catch (_) {}
                   await SupabaseService.client.auth.signOut();
                   if (context.mounted) Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const AuthGate()), (route) => false);
                 }
               },
               itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                const PopupMenuItem<String>(
-                  value: 'settings',
-                  child: ListTile(leading: Icon(Icons.settings), title: Text('Налаштування годин'), contentPadding: EdgeInsets.zero),
-                ),
-                const PopupMenuItem<String>(
-                  value: 'logout',
-                  child: ListTile(leading: Icon(Icons.logout, color: Colors.red), title: Text('Вийти', style: TextStyle(color: Colors.red)), contentPadding: EdgeInsets.zero),
-                ),
+                const PopupMenuItem<String>(value: 'settings', child: ListTile(leading: Icon(Icons.settings), title: Text('Налаштування годин'), contentPadding: EdgeInsets.zero)),
+                const PopupMenuItem<String>(value: 'logout', child: ListTile(leading: Icon(Icons.logout, color: Colors.red), title: Text('Вийти', style: TextStyle(color: Colors.red)), contentPadding: EdgeInsets.zero)),
               ],
             ),
           ],
@@ -515,9 +453,10 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> w
         ),
         body: TabBarView(
           children: [
-            OrdersListTab(statusFilter: 'Очікує підтвердження', restaurantId: widget.restaurantId),
-            OrdersListTab(statusFilter: 'В роботі', restaurantId: widget.restaurantId),
-            OrdersListTab(statusFilter: 'Історія', restaurantId: widget.restaurantId),
+            // 🔥 ПЕРЕДАЄМО _allOrders В УСІ ВКЛАДКИ
+            OrdersListTab(statusFilter: 'Очікує підтвердження', restaurantId: widget.restaurantId, orders: _allOrders),
+            OrdersListTab(statusFilter: 'В роботі', restaurantId: widget.restaurantId, orders: _allOrders),
+            OrdersListTab(statusFilter: 'Історія', restaurantId: widget.restaurantId, orders: _allOrders),
             RestaurantMenuManager(restaurantId: widget.restaurantId),
             RestaurantStatisticsView(restaurantId: widget.restaurantId),
           ],

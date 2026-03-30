@@ -6,48 +6,15 @@ import 'order_modals.dart';
 class OrdersListTab extends StatefulWidget {
   final String statusFilter;
   final dynamic restaurantId;
+  final List<Map<String, dynamic>> orders; // 🔥 ТЕПЕР ПРИЙМАЄМО ДАНІ ВІД ГОЛОВНОГО ЕКРАНА
 
-  const OrdersListTab({super.key, required this.statusFilter, required this.restaurantId});
+  const OrdersListTab({super.key, required this.statusFilter, required this.restaurantId, required this.orders});
 
   @override
   State<OrdersListTab> createState() => _OrdersListTabState();
 }
 
-class _OrdersListTabState extends State<OrdersListTab> with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
-  late Stream<List<Map<String, dynamic>>> _ordersStream;
-
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _initStream();
-  }
-
-  void _initStream() {
-    _ordersStream = SupabaseService.client
-        .from('orders')
-        .stream(primaryKey: ['id'])
-        .eq('restaurant_id', widget.restaurantId)
-        .order('created_at', ascending: false);
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      setState(() {
-        _initStream();
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
+class _OrdersListTabState extends State<OrdersListTab> {
 
   Color _getStatusColor(String status) {
     switch (status) {
@@ -239,7 +206,6 @@ class _OrdersListTabState extends State<OrdersListTab> with AutomaticKeepAliveCl
                           ])
                       ),
 
-                    // 🔥 БРОНЕБІЙНИЙ ЗАХИСТ: Причина скасування (тепер не викличе зебру)
                     if (status == 'Скасовано' || status == 'Відхилено')
                       if (order['cancellation_reason'] != null)
                         Padding(
@@ -349,34 +315,20 @@ class _OrdersListTabState extends State<OrdersListTab> with AutomaticKeepAliveCl
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _ordersStream,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final orders = snapshot.data ?? [];
-        List<Map<String, dynamic>> filteredOrders = [];
+    List<Map<String, dynamic>> filteredOrders = [];
 
-        if (widget.statusFilter == 'Очікує підтвердження') {
-          filteredOrders = orders.where((o) =>
-          o['status'] == 'Очікує підтвердження' ||
-              o['status'] == 'Очікує оплати').toList();
-        } else if (widget.statusFilter == 'В роботі') {
-          filteredOrders = orders.where((o) =>
-          o['status'] == 'Готується' ||
-              o['status'] == 'Готово до видачі' ||
-              o['status'] == 'В дорозі').toList();
-        } else if (widget.statusFilter == 'Історія') {
-          filteredOrders = orders.where((o) =>
-          o['status'] == 'Доставлено' ||
-              o['status'] == 'Скасовано' ||
-              o['status'] == 'Відхилено').toList();
-        }
+    // 🔥 ФІЛЬТРУЄМО ТЕ, ЩО ОТРИМАЛИ ВІД БАТЬКА
+    if (widget.statusFilter == 'Очікує підтвердження') {
+      filteredOrders = widget.orders.where((o) =>
+      o['status'] == 'Очікує підтвердження' || o['status'] == 'Очікує оплати').toList();
+    } else if (widget.statusFilter == 'В роботі') {
+      filteredOrders = widget.orders.where((o) =>
+      o['status'] == 'Готується' || o['status'] == 'Готово до видачі' || o['status'] == 'В дорозі').toList();
+    } else if (widget.statusFilter == 'Історія') {
+      filteredOrders = widget.orders.where((o) =>
+      o['status'] == 'Доставлено' || o['status'] == 'Скасовано' || o['status'] == 'Відхилено').toList();
+    }
 
-        return _buildOrderList(context, filteredOrders);
-      },
-    );
+    return _buildOrderList(context, filteredOrders);
   }
 }

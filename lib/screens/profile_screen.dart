@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../core/supabase_service.dart';
+import 'auth/auth_gate.dart'; // 🔥 Виправлено шлях до AuthGate
 import '../providers/theme_provider.dart';
-import 'auth/auth_gate.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -48,20 +51,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .eq('user_id', user.id)
           .single();
 
-      setState(() {
-        _name = profile['full_name'] ?? 'Без імені';
-        _addressController.text = profile['address'] ?? '';
+      if (mounted) {
+        setState(() {
+          _name = profile['full_name'] ?? 'Без імені';
+          _addressController.text = profile['address'] ?? '';
 
-        final fetchedCity = profile['city']?.toString().trim();
-        if (fetchedCity != null && _settlements.contains(fetchedCity)) {
-          _selectedCity = fetchedCity;
-        }
+          final fetchedCity = profile['city']?.toString().trim();
+          if (fetchedCity != null && _settlements.contains(fetchedCity)) {
+            _selectedCity = fetchedCity;
+          }
 
-        _isLoading = false;
-      });
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       debugPrint('Помилка: $e');
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -111,14 +116,94 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // ========================================================================
+  // 🔥 НОВИЙ МЕТОД: ВИДАЛЕННЯ АКАУНТУ
+  // ========================================================================
+  Future<void> _deleteAccount() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+            SizedBox(width: 8),
+            Text('Видалення акаунту', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: const Text(
+          'Ви дійсно хочете видалити свій профіль?\n\nУсі ваші дані, збережені адреси та історія замовлень будуть назавжди втрачені. Цю дію неможливо скасувати.',
+          style: TextStyle(fontSize: 15),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Скасувати', style: TextStyle(color: Colors.grey))
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Видалити назавжди'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    // Показуємо надійний лоадер
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const PopScope(canPop: false, child: Center(child: CircularProgressIndicator(color: Colors.red))),
+      );
+    }
+
+    try {
+      final user = SupabaseService.client.auth.currentUser;
+      if (user != null) {
+
+        // 1. Видаляємо токен пристрою
+        try {
+          await FirebaseMessaging.instance.deleteToken();
+        } catch (_) {}
+
+        // 2. Викликаємо серверну функцію для повного видалення (RPC)
+        try {
+          await SupabaseService.client.rpc('delete_user_account');
+        } catch (e) {
+          // Фолбек: якщо функції в Supabase ще немає, хоча б видаляємо дані з таблиці профілів
+          await SupabaseService.client.from('profiles').delete().eq('user_id', user.id);
+        }
+
+        // 3. Виходимо з системи
+        await SupabaseService.client.auth.signOut();
+
+        if (mounted) {
+          Navigator.of(context, rootNavigator: true).pop(); // Закриваємо лоадер
+          Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const AuthGate()),
+                  (route) => false
+          );
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ваш акаунт та всі дані успішно видалено.'), backgroundColor: Colors.grey));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // Закриваємо лоадер
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Помилка видалення: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
-    // 🔥 ВИЗНАЧАЄМО ТЕМУ
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // 🔥 ДИНАМІЧНІ КОЛЬОРИ ДЛЯ КАРТОК
     final cardColor = isDark ? Colors.black.withOpacity(0.6) : Colors.white.withOpacity(0.85);
     final textColor = isDark ? Colors.white : Colors.black87;
     final borderColor = isDark ? Colors.white.withOpacity(0.1) : Colors.white.withOpacity(0.8);
@@ -158,12 +243,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Container(
           color: Colors.black.withOpacity(0.4),
           child: ListView(
-            // 🔥 Залишили відступ знизу 180, щоб селект міста відкривався без перекриття баром
             padding: EdgeInsets.only(
                 top: MediaQuery.of(context).padding.top + kToolbarHeight + 20,
                 left: 20,
                 right: 20,
-                bottom: 180
+                bottom: 120
             ),
             children: [
               // === ІМ'Я ===
@@ -246,7 +330,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const Text('Моя стандартна адреса доставки', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white, shadows: [Shadow(color: Colors.black54, blurRadius: 4)])),
               const SizedBox(height: 10),
 
-              // Місто
               Container(
                 decoration: BoxDecoration(
                   color: cardColor,
@@ -273,7 +356,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Вулиця
               Container(
                 decoration: BoxDecoration(
                   color: cardColor,
@@ -312,6 +394,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       : const Text('Зберегти адресу', style: TextStyle(fontSize: 18, color: Colors.black, fontWeight: FontWeight.bold)),
                 ),
               ),
+
+              const SizedBox(height: 40),
+              Divider(color: Colors.white.withOpacity(0.2), thickness: 1),
+              const SizedBox(height: 20),
+
+              // 🔥 НОВА КНОПКА ВИДАЛЕННЯ АКАУНТУ
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                    side: const BorderSide(color: Colors.redAccent, width: 1.5),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  icon: const Icon(Icons.delete_forever),
+                  label: const Text('Видалити акаунт назавжди', style: TextStyle(fontWeight: FontWeight.bold)),
+                  onPressed: _deleteAccount,
+                ),
+              ),
+              const SizedBox(height: 20),
             ],
           ),
         ),

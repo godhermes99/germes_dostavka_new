@@ -23,6 +23,9 @@ class _RestaurantListScreenState extends State<RestaurantListScreen> with Widget
   Map<String, String> _categoryEmojis = {'Всі': '🍽️'};
   bool _isLoading = true;
 
+  // 🔥 Змінна для "пам'яті" випадкового порядку ресторанів
+  List<String> _shuffledRestaurantIds = [];
+
   StreamSubscription? _restaurantsSub;
   StreamSubscription? _dishesSub;
   StreamSubscription? _categoriesSub;
@@ -61,10 +64,43 @@ class _RestaurantListScreenState extends State<RestaurantListScreen> with Widget
         .from('restaurants')
         .stream(primaryKey: ['id'])
         .listen((data) {
-      if (mounted) setState(() {
-        _allRestaurants = data;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          // Створюємо копію даних, щоб її можна було змінювати
+          List<Map<String, dynamic>> incomingData = List<Map<String, dynamic>>.from(data);
+
+          if (_shuffledRestaurantIds.isEmpty && incomingData.isNotEmpty) {
+            // 1. Перше завантаження: перемішуємо список випадковим чином
+            incomingData.shuffle();
+
+            // 2. Запам'ятовуємо цей випадковий порядок ID
+            _shuffledRestaurantIds = incomingData.map((r) => r['id'].toString()).toList();
+            _allRestaurants = incomingData;
+          } else {
+            // 3. Наступні оновлення: сортуємо нові дані за збереженим випадковим порядком
+            incomingData.sort((a, b) {
+              int indexA = _shuffledRestaurantIds.indexOf(a['id'].toString());
+              int indexB = _shuffledRestaurantIds.indexOf(b['id'].toString());
+
+              // Якщо раптом з'явився новий заклад (якого не було при старті), кидаємо його в кінець
+              if (indexA == -1) indexA = 999999;
+              if (indexB == -1) indexB = 999999;
+
+              return indexA.compareTo(indexB);
+            });
+
+            // Додаємо новачків у нашу "пам'ять", щоб вони не стрибали наступного разу
+            for (var r in incomingData) {
+              if (!_shuffledRestaurantIds.contains(r['id'].toString())) {
+                _shuffledRestaurantIds.add(r['id'].toString());
+              }
+            }
+
+            _allRestaurants = incomingData;
+          }
+          _isLoading = false;
+        });
+      }
     }, onError: (err) => debugPrint('Помилка потоку ресторанів: $err'));
 
     _dishesSub = SupabaseService.client
@@ -246,7 +282,8 @@ class _RestaurantListScreenState extends State<RestaurantListScreen> with Widget
           child: SafeArea(
             bottom: false,
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
+            // 🔥 ТУТ ВИКЛИКАЄТЬСЯ НАША НОВА АНІМАЦІЯ
+                ? const Center(child: _FoodLoadingAnimation(size: 60))
                 : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -280,7 +317,6 @@ class _RestaurantListScreenState extends State<RestaurantListScreen> with Widget
                         child: Text('За запитом "$_searchQuery" нічого не знайдено', style: TextStyle(fontWeight: FontWeight.bold, color: textColor))
                     ))
                         : ListView(
-                      // 🔥 Збільшили відступ знизу для результатів пошуку
                       padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 160),
                       children: [
                         if (foundRestaurants.isNotEmpty) ...[
@@ -421,10 +457,9 @@ class _RestaurantListScreenState extends State<RestaurantListScreen> with Widget
                         }
                     ),
 
-                    // 🔥 ГОЛОВНА СІТКА ЗІ ЗБІЛЬШЕНИМ ВІДСТУПОМ ЗНИЗУ
                     Expanded(
                       child: GridView.builder(
-                        padding: const EdgeInsets.only(top: 8, bottom: 160, left: 16, right: 16), // 🔥 Ось він, рятівний 160!
+                        padding: const EdgeInsets.only(top: 8, bottom: 160, left: 16, right: 16),
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 2,
                           crossAxisSpacing: 12,
@@ -546,6 +581,66 @@ class _RestaurantListScreenState extends State<RestaurantListScreen> with Widget
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 🔥 КАСТОМНА АНІМАЦІЯ ЗАВАНТАЖЕННЯ
+// ============================================================================
+class _FoodLoadingAnimation extends StatefulWidget {
+  final double size;
+  const _FoodLoadingAnimation({this.size = 60});
+
+  @override
+  State<_FoodLoadingAnimation> createState() => _FoodLoadingAnimationState();
+}
+
+class _FoodLoadingAnimationState extends State<_FoodLoadingAnimation> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  final List<String> _emojis = ['🍕', '🍣', '🍔', '🥗', '🍩', '🍜', '🍟'];
+  int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 400))
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          _controller.reverse();
+        } else if (status == AnimationStatus.dismissed) {
+          if (mounted) {
+            setState(() {
+              _currentIndex = (_currentIndex + 1) % _emojis.length;
+            });
+            _controller.forward();
+          }
+        }
+      });
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Transform.scale(
+            scale: 0.7 + (_controller.value * 0.5),
+            child: Opacity(
+              opacity: 0.4 + (_controller.value * 0.6),
+              child: Text(_emojis[_currentIndex], style: TextStyle(fontSize: widget.size)),
+            ),
+          );
+        },
       ),
     );
   }
