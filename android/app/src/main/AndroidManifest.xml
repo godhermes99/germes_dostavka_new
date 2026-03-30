@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
-        android:label="germes_dostavka_new"
+        android:label="ЇжGo"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

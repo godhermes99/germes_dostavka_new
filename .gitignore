@@ -45,9 +45,12 @@ app.*.map.json
 /android/app/release
 lib/core/secrets.dart
 .env.local
-ios/Runner/GoogleService-Info.plist
+# ios/Runner/GoogleService-Info.plist
 ios/Pods/
 ios/Podfile.lock
 .flutter-plugins
 android/app/google-services.json
+android/key.properties
+*.jks
+*.keystore
 lib/firebase_options.dart

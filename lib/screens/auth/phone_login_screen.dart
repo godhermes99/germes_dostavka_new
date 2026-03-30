@@ -41,7 +41,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
         ),
       );
     } catch (e) {
-      print('Помилка: $e');
+      debugPrint('Помилка: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Не вдалося надіслати SMS')),
       );
